@@ -1,0 +1,11 @@
+extends AnimatedSprite2D
+
+@export var speed: int = 500
+var direction: Vector2 = Vector2.RIGHT
+var lifetime: float = 2.0  # bullet disappears after 2 seconds
+
+func _physics_process(delta):
+	position += direction * speed * delta
+	lifetime -= delta
+	if lifetime <= 0:
+		queue_free()
