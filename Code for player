@@ -1,0 +1,160 @@
+extends CharacterBody2D
+
+# ----- References -----
+@onready var animated_sprite_2d: AnimatedSprite2D = $AnimatedSprite2D
+@onready var muzzle: Marker2D = $Muzzle
+
+# ----- Bullet Scene -----
+const BULLET_SCENE = preload("res://FX/bullet_new.tscn")
+var player_death = preload("res://Player/death_effect.tscn")
+
+# ----- Player settings -----
+@export var GRAVITY: int = 1000
+@export var SPEED: int = 300
+@export var JUMP: int = -350
+@export var HORIZONTAL_JUMP: int = 200
+@export var max_horizontal_speed: int = 300
+@export var max_horizontal_jump_speed: int = 300
+@export var slow_down_speed: int = 4000
+
+# ----- Shooting -----
+@export var fire_rate: float = 0.2
+var fire_timer: float = 0.0
+
+# ----- Player state -----
+enum state {Idle, Run, Jump, Shoot}
+var current_state: state = state.Idle
+
+
+func _physics_process(delta):
+
+	player_gravity(delta)
+	player_jump()
+	player_movement(delta)
+
+	fire_timer -= delta
+
+	if Input.is_action_pressed("Shoot") and fire_timer <= 0:
+		fire_bullet()
+		fire_timer = fire_rate
+
+	player_update_state()
+
+	move_and_slide()
+
+	update_animation()
+
+
+# ----- Gravity -----
+func player_gravity(delta):
+	if not is_on_floor():
+		velocity.y += GRAVITY * delta
+
+
+# ----- Jump -----
+func player_jump():
+	if Input.is_action_just_pressed("Jump") and is_on_floor():
+		velocity.y = JUMP
+
+
+# ----- Movement -----
+func player_movement(delta):
+
+	var direction = Input.get_axis("Move_Left", "Move_Right")
+
+	if direction != 0:
+
+		if is_on_floor():
+			velocity.x += direction * SPEED * delta
+			velocity.x = clamp(velocity.x, -max_horizontal_speed, max_horizontal_speed)
+
+		else:
+			velocity.x += direction * HORIZONTAL_JUMP * delta
+			velocity.x = clamp(velocity.x, -max_horizontal_jump_speed, max_horizontal_jump_speed)
+
+		animated_sprite_2d.flip_h = direction < 0
+
+	else:
+		if is_on_floor():
+			velocity.x = move_toward(velocity.x, 0, slow_down_speed * delta)
+
+
+# ----- Player State -----
+func player_update_state():
+
+	if Input.is_action_pressed("Shoot"):
+		current_state = state.Shoot
+
+	elif not is_on_floor():
+		current_state = state.Jump
+
+	elif abs(velocity.x) > 10:
+		current_state = state.Run
+
+	else:
+		current_state = state.Idle
+
+
+# ----- Animation -----
+func update_animation():
+
+	match current_state:
+
+		state.Idle:
+			if animated_sprite_2d.animation != "Idle":
+				animated_sprite_2d.play("Idle")
+
+		state.Run:
+			if animated_sprite_2d.animation != "Run":
+				animated_sprite_2d.play("Run")
+
+		state.Jump:
+			if animated_sprite_2d.animation != "Jump":
+				animated_sprite_2d.play("Jump")
+
+		state.Shoot:
+			if animated_sprite_2d.animation != "Shoot":
+				animated_sprite_2d.play("Shoot")
+
+
+# ----- Death Effect -----
+func player_death_effect():
+
+	var player_death_instantiate = player_death.instantiate() as Node2D
+	player_death_instantiate.global_position = global_position
+	get_parent().add_child(player_death_instantiate)
+
+	queue_free()
+
+	HealthManager.reset_health()
+	get_tree().reload_current_scene()
+
+
+# ----- Fire Bullet -----
+func fire_bullet():
+
+	var bullet = BULLET_SCENE.instantiate()
+
+	bullet.global_position = muzzle.global_position
+
+	if animated_sprite_2d.flip_h:
+		bullet.direction = Vector2.LEFT
+		muzzle.position.x = -abs(muzzle.position.x)
+	else:
+		bullet.direction = Vector2.RIGHT
+		muzzle.position.x = abs(muzzle.position.x)
+
+	get_tree().current_scene.add_child(bullet)
+
+
+# ----- Enemy Collision -----
+func _on_area_2d_body_entered(body: Node2D):
+
+	if body.is_in_group("Enemy"):
+
+		print("Enemy entered", body.damage_amount)
+
+		HealthManager.decrease_health(body.damage_amount)
+
+		if HealthManager.current_health == 0:
+			player_death_effect()
